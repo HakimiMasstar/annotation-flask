@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Upload YOLO Model{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title mb-4">Upload YOLO Model</h2>
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="model" class="form-label">Select YOLO Model File (.pt)</label>
+                        <input type="file" class="form-control" id="model" name="model" accept=".pt" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Upload</button>
+                </form>
+                <div id="uploadStatus" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    $('#uploadForm').on('submit', function(e) {
+        e.preventDefault();
+        
+        var formData = new FormData(this);
+        var statusDiv = $('#uploadStatus');
+        
+        statusDiv.html('<div class="alert alert-info">Uploading...</div>');
+        
+        $.ajax({
+            url: '/upload_model',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(response) {
+                if (response.error) {
+                    statusDiv.html(`<div class="alert alert-danger">${response.error}</div>`);
+                } else {
+                    statusDiv.html(`<div class="alert alert-success">${response.message}</div>`);
+                    $('#uploadForm')[0].reset();
+                }
+            },
+            error: function() {
+                statusDiv.html('<div class="alert alert-danger">Upload failed. Please try again.</div>');
+            }
+        });
+    });
+});
+</script>
+{% endblock %} 

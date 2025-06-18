@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}YOLO Video Tool - Home{% endblock %}
+
+{% block content %}
+<div class="text-center">
+    <h1 class="mb-4">Welcome to YOLO Video Tool</h1>
+    <p class="lead mb-5">A tool for extracting, annotating, and reviewing images from videos using YOLO models.</p>
+
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title mb-4">Select a Tool</h5>
+                    <div class="d-grid gap-3">
+                        <a href="/upload_model" class="btn btn-primary btn-lg">Upload Model</a>
+                        <a href="/extract" class="btn btn-primary btn-lg">Extract Images from Video</a>
+                        <a href="/annotate" class="btn btn-primary btn-lg">Annotate Extracted Images</a>
+                        <a href="/review" class="btn btn-primary btn-lg">Review/Change Annotations</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

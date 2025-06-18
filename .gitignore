@@ -1,0 +1,7 @@
+__pycache__/
+venv/
+videos/*
+extracted-images/*
+annotated-images/*
+models/*
+uploads/*

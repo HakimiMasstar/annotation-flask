@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}Annotate Images{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>Annotate Images</h2>
+    <form id="annotateForm" class="mt-4">
+        <div class="mb-3">
+            <label for="folder_name" class="form-label">Select Extracted Folder:</label>
+            <select class="form-select" id="folder_name" name="folder_name" required>
+                <option value="">Choose a folder...</option>
+                {% for folder in folders %}
+                <option value="{{ folder }}">{{ folder }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="mb-3">
+            <label for="model" class="form-label">Select Model:</label>
+            <select class="form-select" id="model" name="model" required>
+                <option value="">Choose a model...</option>
+                {% for model in models %}
+                <option value="{{ model }}">{{ model }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Select Classes to Annotate:</label>
+            <div id="classList" class="border rounded p-3" style="max-height: 300px; overflow-y: auto;">
+                <div class="text-center text-muted">Select a model to see available classes</div>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label for="iou_threshold" class="form-label">IoU Threshold for Overlap Filtering:</label>
+            <div class="row">
+                <div class="col-md-6">
+                    <input type="range" class="form-range" id="iou_threshold" name="iou_threshold" 
+                           min="0.1" max="0.9" step="0.1" value="0.5" 
+                           oninput="document.getElementById('iou_value').textContent = this.value">
+                </div>
+                <div class="col-md-6">
+                    <span class="form-text">Value: <span id="iou_value">0.5</span> (Higher = more strict filtering)</span>
+                </div>
+            </div>
+            <small class="form-text text-muted">
+                IoU threshold for filtering overlapping detections. Higher values mean more strict filtering.
+                When two or more classes overlap with IoU > threshold, only the larger detection is kept.
+            </small>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Start Annotation</button>
+    </form>
+    <div id="annotateStatus" class="mt-4"></div>
+</div>
+
+<script>
+document.getElementById('model').addEventListener('change', function() {
+    const model = this.value;
+    if (!model) return;
+
+    fetch(`/get_model_classes?model=${model}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showMessage(data.error, 'danger');
+                return;
+            }
+            const classList = document.getElementById('classList');
+            classList.innerHTML = '';
+            
+            data.classes.forEach((className, index) => {
+                const row = document.createElement('div');
+                row.className = 'row mb-2 align-items-center';
+                
+                // Checkbox column
+                const checkboxCol = document.createElement('div');
+                checkboxCol.className = 'col-auto';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'form-check-input class-checkbox';
+                checkbox.id = `class_${index}`;
+                checkbox.dataset.classIndex = index;
+                checkboxCol.appendChild(checkbox);
+                
+                // Class name column
+                const nameCol = document.createElement('div');
+                nameCol.className = 'col';
+                const label = document.createElement('label');
+                label.className = 'form-check-label';
+                label.htmlFor = `class_${index}`;
+                label.textContent = className;
+                nameCol.appendChild(label);
+                
+                // Class number input column (initially hidden)
+                const inputCol = document.createElement('div');
+                inputCol.className = 'col-auto class-input-col';
+                inputCol.style.display = 'none';
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'form-control form-control-sm class-number';
+                input.style.width = '80px';
+                input.placeholder = 'Class #';
+                input.dataset.classIndex = index;
+                inputCol.appendChild(input);
+                
+                // Add change event to checkbox
+                checkbox.addEventListener('change', function() {
+                    inputCol.style.display = this.checked ? 'block' : 'none';
+                    if (!this.checked) {
+                        input.value = ''; // Clear input when unchecked
+                    }
+                });
+                
+                row.appendChild(checkboxCol);
+                row.appendChild(nameCol);
+                row.appendChild(inputCol);
+                classList.appendChild(row);
+            });
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showMessage('Error loading model classes', 'danger');
+        });
+});
+
+function showMessage(message, type = 'info') {
+    const statusDiv = document.getElementById('annotateStatus');
+    statusDiv.innerHTML = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    `;
+}
+
+document.getElementById('annotateForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const folderName = document.getElementById('folder_name').value;
+    const model = document.getElementById('model').value;
+    
+    // Get selected classes and their mappings
+    const classMappings = {};
+    document.querySelectorAll('.class-checkbox:checked').forEach(checkbox => {
+        const classIndex = checkbox.dataset.classIndex;
+        const input = document.querySelector(`.class-number[data-class-index="${classIndex}"]`);
+        const newClass = input.value.trim();
+        
+        if (newClass) {
+            classMappings[classIndex] = newClass;
+        } else {
+            classMappings[classIndex] = classIndex; // Use original class if no mapping provided
+        }
+    });
+    
+    if (Object.keys(classMappings).length === 0) {
+        showMessage('Please select at least one class to annotate', 'warning');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('folder_name', folderName);
+    formData.append('model', model);
+    formData.append('class_mappings', JSON.stringify(classMappings));
+    formData.append('iou_threshold', document.getElementById('iou_threshold').value);
+    
+    showMessage('Processing annotations...', 'info');
+    
+    fetch('/annotate', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            showMessage(data.error, 'danger');
+        } else {
+            showMessage(data.message, 'success');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('Error during annotation', 'danger');
+    });
+});
+</script>
+{% endblock %} 

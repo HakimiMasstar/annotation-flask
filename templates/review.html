@@ -1,0 +1,837 @@
+{% extends "base.html" %}
+
+{% block title %}Review Annotations{% endblock %}
+
+{% block extra_css %}
+<style>
+    .image-container {
+        position: relative;
+        max-width: 100%;
+        margin: 20px 0;
+        user-select: none; /* Prevent text selection during drawing */
+    }
+    .image-container img {
+        max-width: 100%;
+        height: auto;
+        user-select: none; /* Prevent text selection */
+    }
+    .annotation-box {
+        position: absolute;
+        border: 3px solid;
+        background-color: rgba(255, 255, 255, 0.2);
+        cursor: pointer;
+        user-select: none; /* Prevent text selection */
+    }
+    .annotation-box.selected {
+        border-width: 5px;
+        border-color: #FFD700 !important; /* Bright gold color for selected boxes */
+        background-color: rgba(255, 215, 0, 0.4) !important; /* Semi-transparent gold background */
+        box-shadow: 0 0 12px rgba(255, 215, 0, 0.8); /* Add stronger glow effect */
+    }
+    .annotation-box.drawing-preview {
+        border-color: #007bff !important;
+        border-width: 4px !important;
+        background-color: rgba(0, 123, 255, 0.3) !important;
+        box-shadow: 0 0 8px rgba(0, 123, 255, 0.6);
+        z-index: 1000;
+    }
+    .class-label {
+        position: absolute;
+        top: -20px;
+        left: 0;
+        background-color: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 2px 6px;
+        font-size: 12px;
+        font-weight: bold;
+        border-radius: 3px;
+        white-space: nowrap;
+        user-select: none; /* Prevent text selection */
+    }
+    .annotation-list {
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    .annotation-item {
+        cursor: pointer;
+        padding: 5px;
+        margin: 2px 0;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+    }
+    .annotation-item:hover {
+        background-color: #f0f0f0;
+    }
+    .annotation-item.selected {
+        background-color: #e0ffe0;
+        border-color: #28a745;
+    }
+    .class-checkboxes {
+        max-height: 300px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        padding: 10px;
+        background-color: #f8f9fa;
+    }
+    .class-checkbox-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 5px;
+        padding: 5px;
+        border-radius: 3px;
+    }
+    .class-checkbox-item:hover {
+        background-color: #e9ecef;
+    }
+    .class-color-indicator {
+        width: 20px;
+        height: 20px;
+        border-radius: 3px;
+        margin-right: 10px;
+        border: 1px solid #ccc;
+    }
+    /* Drawing mode styles */
+    .image-container.drawing-mode {
+        cursor: crosshair;
+    }
+    .image-container.drawing-mode img {
+        pointer-events: none; /* Prevent image clicks during drawing */
+    }
+    .image-container.drawing-mode .annotation-box {
+        pointer-events: none; /* Prevent annotation box clicks during drawing */
+    }
+    .class-number-label {
+        position: absolute;
+        top: -15px;
+        left: -5px;
+        font-size: 12px;
+        font-weight: bold;
+        background: none;
+        padding: 0;
+        margin: 0;
+        line-height: 1;
+        user-select: none;
+        z-index: 10;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>Review Annotations</h2>
+    <form id="reviewForm" class="mt-4">
+        <div class="row">
+            <div class="col-md-4">
+                <div class="mb-3">
+                    <label for="folder_name" class="form-label">Select Folder:</label>
+                    <select class="form-select" id="folder_name" name="folder_name" required>
+                        <option value="">Choose a folder...</option>
+                        {% for folder in folders %}
+                        <option value="{{ folder }}">{{ folder }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Select Classes:</label>
+                    <div id="classCheckboxes" class="class-checkboxes">
+                        <div class="text-muted">Select a folder to see available classes</div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="btn-group w-100">
+                        <button type="button" class="btn btn-secondary" id="prevBtn">Previous</button>
+                        <button type="button" class="btn btn-secondary" id="nextBtn">Next</button>
+                    </div>
+                    <div class="text-center mt-2">
+                        <small class="text-muted" id="imageCounter">No images loaded</small>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="newClass" placeholder="New class number">
+                        <button type="button" class="btn btn-primary" id="changeClassBtn">Change Class</button>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="btn-group w-100">
+                        <button type="button" class="btn btn-danger" id="deleteAnnotationBtn">Delete Annotation</button>
+                        <button type="button" class="btn btn-warning" id="deleteFrameBtn">Delete Frame</button>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="addAnnotationClass" placeholder="Class number" min="0">
+                        <button type="button" class="btn btn-success" id="addAnnotationBtn">Add Annotation</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="border rounded p-3">
+                    <div id="imageContainer" class="image-container" style="display: none;">
+                        <img id="currentImage" class="img-fluid" alt="Current image">
+                        <div id="annotationBoxes"></div>
+                    </div>
+                    <div id="annotationList" class="mt-3">
+                        <h5>Annotations:</h5>
+                        <div id="annotationItems" class="list-group"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+    <div id="reviewStatus" class="mt-4"></div>
+</div>
+
+<script>
+let currentImages = [];
+let currentImageIndex = 0;
+let currentAnnotations = [];
+let selectedAnnotationId = null;
+let isDrawing = false;
+let drawStart = null;
+let drawEnd = null;
+let selectedClasses = [];
+let classColors = {};
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    setupEventListeners();
+});
+
+function setupEventListeners() {
+    document.getElementById('folder_name').addEventListener('change', onFolderSelected);
+    document.getElementById('prevBtn').addEventListener('click', previousImage);
+    document.getElementById('nextBtn').addEventListener('click', nextImage);
+    document.getElementById('addAnnotationBtn').addEventListener('click', toggleDrawingMode);
+    document.getElementById('deleteFrameBtn').addEventListener('click', deleteFrame);
+    document.getElementById('changeClassBtn').addEventListener('click', updateAnnotationClass);
+    document.getElementById('deleteAnnotationBtn').addEventListener('click', deleteAnnotation);
+    
+    // Drawing events on image
+    const imageContainer = document.getElementById('imageContainer');
+    imageContainer.addEventListener('mousedown', startDrawing);
+    imageContainer.addEventListener('mousemove', draw);
+    imageContainer.addEventListener('mouseup', endDrawing);
+}
+
+function onFolderSelected() {
+    const folderName = document.getElementById('folder_name').value;
+    if (!folderName) return;
+    
+    // Get class counts for this folder
+    fetch(`/get_folder_class_counts?folder=${encodeURIComponent(folderName)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                populateClassCheckboxes(data.class_counts);
+            } else {
+                showMessage(data.error, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showMessage('Error loading class counts', 'error');
+        });
+}
+
+function populateClassCheckboxes(classCounts) {
+    updateClassCheckboxes(classCounts);
+}
+
+function onClassSelectionChanged() {
+    selectedClasses = Array.from(document.querySelectorAll('#classCheckboxes input:checked')).map(cb => cb.value);
+    if (selectedClasses.length > 0) {
+        loadImagesForSelectedClasses();
+    } else {
+        document.getElementById('imageContainer').style.display = 'none';
+        document.getElementById('annotationItems').innerHTML = '';
+    }
+}
+
+function loadImagesForSelectedClasses() {
+    const folderName = document.getElementById('folder_name').value;
+    
+    if (!folderName || selectedClasses.length === 0) {
+        showMessage('Please select a folder and at least one class', 'error');
+        return;
+    }
+    
+    // Store current image name to try to stay on the same image
+    const currentImageName = currentImages[currentImageIndex]?.image_name;
+    
+    // Get images for selected classes
+    const formData = new FormData();
+    formData.append('action', 'get_images');
+    formData.append('folder_name', folderName);
+    selectedClasses.forEach(cls => formData.append('class_names[]', cls));
+    
+    fetch('/review', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            currentImages = data.images;
+            
+            // Try to find the current image in the new list
+            if (currentImageName && currentImages.length > 0) {
+                const newIndex = currentImages.findIndex(img => img.image_name === currentImageName);
+                if (newIndex !== -1) {
+                    currentImageIndex = newIndex;
+                } else {
+                    // If current image not found, stay at the same relative position if possible
+                    currentImageIndex = Math.min(currentImageIndex, currentImages.length - 1);
+                }
+            } else {
+                currentImageIndex = 0;
+            }
+            
+            displayCurrentImage();
+        } else {
+            showMessage(data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('Error loading images', 'error');
+    });
+}
+
+function displayCurrentImage() {
+    if (currentImages.length === 0) {
+        showMessage('No images found for selected classes', 'info');
+        return;
+    }
+    
+    const imageData = currentImages[currentImageIndex];
+    const img = document.getElementById('currentImage');
+    const counter = document.getElementById('imageCounter');
+    const container = document.getElementById('imageContainer');
+    
+    img.src = `/get_image/${encodeURIComponent(imageData.image_path)}`;
+    counter.textContent = `${currentImageIndex + 1} / ${currentImages.length}`;
+    container.style.display = 'block';
+    
+    // Update navigation buttons
+    document.getElementById('prevBtn').disabled = currentImageIndex === 0;
+    document.getElementById('nextBtn').disabled = currentImageIndex === currentImages.length - 1;
+    
+    // Display annotations
+    currentAnnotations = imageData.annotations;
+    displayAnnotations();
+}
+
+function displayAnnotations() {
+    const container = document.getElementById('annotationItems');
+    container.innerHTML = '';
+    
+    currentAnnotations.forEach(anno => {
+        const item = document.createElement('div');
+        item.className = 'annotation-item';
+        item.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center">
+                <span><strong>ID ${anno.id}</strong>: class ${anno.class}</span>
+                <small class="text-muted">${anno.x.toFixed(3)}, ${anno.y.toFixed(3)}</small>
+            </div>
+        `;
+        item.onclick = () => selectAnnotation(anno.id);
+        container.appendChild(item);
+    });
+    
+    // Draw annotation boxes on image
+    drawAnnotationBoxes();
+}
+
+function drawAnnotationBoxes() {
+    const img = document.getElementById('currentImage');
+    const container = document.getElementById('annotationBoxes');
+    
+    img.onload = function() {
+        container.innerHTML = '';
+        
+        currentAnnotations.forEach(anno => {
+            const box = document.createElement('div');
+            box.className = 'annotation-box';
+            box.dataset.annotationId = anno.id;
+            
+            const x = anno.x * 100;
+            const y = anno.y * 100;
+            const w = anno.width * 100;
+            const h = anno.height * 100;
+            
+            box.style.left = `${x - w/2}%`;
+            box.style.top = `${y - h/2}%`;
+            box.style.width = `${w}%`;
+            box.style.height = `${h}%`;
+            box.style.borderColor = classColors[anno.class] || '#FF6B6B';
+            
+            // Add class number label
+            const classLabel = document.createElement('div');
+            classLabel.className = 'class-number-label';
+            classLabel.textContent = anno.class;
+            classLabel.style.color = classColors[anno.class] || '#FF6B6B';
+            
+            box.appendChild(classLabel);
+            box.onclick = () => selectAnnotation(anno.id);
+            container.appendChild(box);
+        });
+    };
+}
+
+function selectAnnotation(annotationId) {
+    selectedAnnotationId = annotationId;
+    
+    // Update visual selection
+    document.querySelectorAll('.annotation-box').forEach(box => {
+        box.classList.remove('selected');
+    });
+    
+    document.querySelectorAll('.annotation-item').forEach(item => {
+        item.classList.remove('selected');
+    });
+    
+    const selectedBox = document.querySelector(`[data-annotation-id="${annotationId}"]`);
+    const selectedItem = Array.from(document.querySelectorAll('.annotation-item')).find(item => 
+        item.textContent.includes(`ID ${annotationId}`)
+    );
+    
+    if (selectedBox) {
+        selectedBox.classList.add('selected');
+    }
+    if (selectedItem) {
+        selectedItem.classList.add('selected');
+    }
+}
+
+function previousImage() {
+    if (currentImageIndex > 0) {
+        currentImageIndex--;
+        displayCurrentImage();
+    }
+}
+
+function nextImage() {
+    if (currentImageIndex < currentImages.length - 1) {
+        currentImageIndex++;
+        displayCurrentImage();
+    }
+}
+
+function toggleDrawingMode() {
+    const btn = document.getElementById('addAnnotationBtn');
+    const container = document.getElementById('imageContainer');
+    
+    if (btn.textContent === 'Add Annotation') {
+        btn.textContent = 'Cancel Drawing';
+        btn.className = 'btn btn-secondary';
+        container.classList.add('drawing-mode');
+        showMessage('Click and drag to draw a rectangle on the image', 'info');
+    } else {
+        btn.textContent = 'Add Annotation';
+        btn.className = 'btn btn-success';
+        container.classList.remove('drawing-mode');
+        
+        // Remove any existing preview
+        const preview = container.querySelector('.drawing-preview');
+        if (preview) {
+            preview.remove();
+        }
+    }
+}
+
+function startDrawing(e) {
+    const btn = document.getElementById('addAnnotationBtn');
+    if (btn.textContent !== 'Cancel Drawing') return;
+    
+    // Prevent default to avoid text selection
+    e.preventDefault();
+    e.stopPropagation();
+    
+    isDrawing = true;
+    const rect = e.currentTarget.getBoundingClientRect();
+    drawStart = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+    };
+    drawEnd = { ...drawStart };
+}
+
+function draw(e) {
+    if (!isDrawing) return;
+    
+    // Prevent default to avoid text selection
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    drawEnd = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+    };
+    
+    // Show drawing preview
+    const container = document.getElementById('imageContainer');
+    const existingPreview = container.querySelector('.drawing-preview');
+    if (existingPreview) {
+        existingPreview.remove();
+    }
+    
+    const preview = document.createElement('div');
+    preview.className = 'annotation-box drawing-preview';
+    preview.style.position = 'absolute';
+    preview.style.pointerEvents = 'none';
+    
+    const x = Math.min(drawStart.x, drawEnd.x);
+    const y = Math.min(drawStart.y, drawEnd.y);
+    const w = Math.abs(drawEnd.x - drawStart.x);
+    const h = Math.abs(drawEnd.y - drawStart.y);
+    
+    preview.style.left = `${x}px`;
+    preview.style.top = `${y}px`;
+    preview.style.width = `${w}px`;
+    preview.style.height = `${h}px`;
+    
+    container.appendChild(preview);
+}
+
+function endDrawing() {
+    if (!isDrawing) return;
+    isDrawing = false;
+    
+    if (!drawStart || !drawEnd) return;
+    
+    const classNum = document.getElementById('addAnnotationClass').value.trim();
+    if (!classNum) {
+        showMessage('Please enter a class number', 'error');
+        toggleDrawingMode();
+        return;
+    }
+    
+    // Convert pixel coordinates to YOLO format
+    const container = document.getElementById('imageContainer');
+    const img = document.getElementById('currentImage');
+    const rect = container.getBoundingClientRect();
+    
+    // Get the actual image dimensions within the container
+    const imgRect = img.getBoundingClientRect();
+    
+    const x1 = Math.min(drawStart.x, drawEnd.x);
+    const y1 = Math.min(drawStart.y, drawEnd.y);
+    const x2 = Math.max(drawStart.x, drawEnd.x);
+    const y2 = Math.max(drawStart.y, drawEnd.y);
+    
+    // Convert to image coordinates (relative to the image, not the container)
+    const imgX1 = (x1 - (imgRect.left - rect.left)) / imgRect.width;
+    const imgY1 = (y1 - (imgRect.top - rect.top)) / imgRect.height;
+    const imgX2 = (x2 - (imgRect.left - rect.left)) / imgRect.width;
+    const imgY2 = (y2 - (imgRect.top - rect.top)) / imgRect.height;
+    
+    // Ensure coordinates are within bounds
+    const clampedX1 = Math.max(0, Math.min(1, imgX1));
+    const clampedY1 = Math.max(0, Math.min(1, imgY1));
+    const clampedX2 = Math.max(0, Math.min(1, imgX2));
+    const clampedY2 = Math.max(0, Math.min(1, imgY2));
+    
+    // Convert to YOLO format (center_x, center_y, width, height) normalized
+    const centerX = (clampedX1 + clampedX2) / 2;
+    const centerY = (clampedY1 + clampedY2) / 2;
+    const width = clampedX2 - clampedX1;
+    const height = clampedY2 - clampedY1;
+    
+    // Check if the box is too small
+    if (width < 0.01 || height < 0.01) {
+        showMessage('Annotation box is too small. Please draw a larger rectangle.', 'error');
+        toggleDrawingMode();
+        return;
+    }
+    
+    const boxData = `${centerX},${centerY},${width},${height}`;
+    
+    const imageData = currentImages[currentImageIndex];
+    const formData = new FormData();
+    formData.append('action', 'add_annotation');
+    formData.append('folder_name', document.getElementById('folder_name').value);
+    formData.append('image_name', imageData.image_name);
+    formData.append('box_data', boxData);
+    formData.append('class_name', classNum);
+    
+    fetch('/review', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage(data.message, 'success');
+            refreshCurrentImage();
+            // Refresh class counts to show new class if it didn't exist before
+            refreshClassCounts();
+        } else {
+            showMessage(data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('Error adding annotation', 'error');
+    });
+    
+    // Remove preview and reset drawing mode
+    const preview = container.querySelector('.drawing-preview');
+    if (preview) {
+        preview.remove();
+    }
+    toggleDrawingMode();
+}
+
+function updateAnnotationClass() {
+    if (selectedAnnotationId === null) {
+        showMessage('Please select an annotation first', 'error');
+        return;
+    }
+    
+    const newClass = document.getElementById('newClass').value.trim();
+    if (!newClass) {
+        showMessage('Please enter a new class number', 'error');
+        return;
+    }
+    
+    const imageData = currentImages[currentImageIndex];
+    const formData = new FormData();
+    formData.append('action', 'update_annotation');
+    formData.append('folder_name', document.getElementById('folder_name').value);
+    formData.append('image_name', imageData.image_name);
+    formData.append('annotation_id', selectedAnnotationId);
+    formData.append('new_class', newClass);
+    
+    fetch('/review', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage(data.message, 'success');
+            refreshCurrentImage();
+            // Refresh class counts to show new class if it didn't exist before
+            refreshClassCounts();
+        } else {
+            showMessage(data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('Error updating annotation', 'error');
+    });
+}
+
+function deleteAnnotation() {
+    if (selectedAnnotationId === null) {
+        showMessage('Please select an annotation first', 'error');
+        return;
+    }
+    
+    const imageData = currentImages[currentImageIndex];
+    const formData = new FormData();
+    formData.append('action', 'delete_annotation');
+    formData.append('folder_name', document.getElementById('folder_name').value);
+    formData.append('image_name', imageData.image_name);
+    formData.append('annotation_id', selectedAnnotationId);
+    
+    fetch('/review', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage(data.message, 'success');
+            refreshCurrentImage();
+            // Refresh class counts to update counts after deletion
+            refreshClassCounts();
+        } else {
+            showMessage(data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('Error deleting annotation', 'error');
+    });
+}
+
+function deleteFrame() {
+    if (currentImages.length === 0) {
+        showMessage('No image to delete', 'error');
+        return;
+    }
+    
+    const imageData = currentImages[currentImageIndex];
+    const formData = new FormData();
+    formData.append('action', 'delete_frame');
+    formData.append('folder_name', document.getElementById('folder_name').value);
+    formData.append('image_name', imageData.image_name);
+    
+    fetch('/review', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage(data.message, 'success');
+            currentImages.splice(currentImageIndex, 1);
+            if (currentImageIndex >= currentImages.length && currentImages.length > 0) {
+                currentImageIndex = currentImages.length - 1;
+            }
+            if (currentImages.length === 0) {
+                showMessage('No more images for selected classes', 'info');
+                document.getElementById('imageContainer').style.display = 'none';
+            } else {
+                displayCurrentImage();
+            }
+            // Refresh class counts to update counts after frame deletion
+            refreshClassCounts();
+        } else {
+            showMessage(data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('Error deleting frame', 'error');
+    });
+}
+
+function refreshCurrentImage() {
+    const folderName = document.getElementById('folder_name').value;
+    const formData = new FormData();
+    formData.append('action', 'get_images');
+    formData.append('folder_name', folderName);
+    selectedClasses.forEach(cls => formData.append('class_names[]', cls));
+    
+    fetch('/review', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            currentImages = data.images;
+            const currentImageName = currentImages[currentImageIndex]?.image_name;
+            if (currentImageName) {
+                const newIndex = currentImages.findIndex(img => img.image_name === currentImageName);
+                if (newIndex !== -1) {
+                    currentImageIndex = newIndex;
+                } else {
+                    currentImageIndex = Math.min(currentImageIndex, currentImages.length - 1);
+                }
+            }
+            displayCurrentImage();
+        } else {
+            showMessage(data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('Error refreshing image', 'error');
+    });
+}
+
+function refreshClassCounts() {
+    const folderName = document.getElementById('folder_name').value;
+    if (!folderName) return;
+    
+    // Get updated class counts for this folder
+    fetch(`/get_folder_class_counts?folder=${encodeURIComponent(folderName)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateClassCheckboxes(data.class_counts);
+            } else {
+                console.error('Error refreshing class counts:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+}
+
+function updateClassCheckboxes(classCounts) {
+    const container = document.getElementById('classCheckboxes');
+    const currentChecked = Array.from(document.querySelectorAll('#classCheckboxes input:checked')).map(cb => cb.value);
+    
+    // Generate more distinct and vibrant colors for classes
+    const colors = [
+        '#FF0000', // Bright Red
+        '#00FF00', // Bright Green  
+        '#0000FF', // Bright Blue
+        '#FFA500', // Orange
+        '#800080', // Purple
+        '#FFD700', // Gold
+        '#FF1493', // Deep Pink
+        '#00FFFF', // Cyan
+        '#FF4500', // Orange Red
+        '#32CD32', // Lime Green
+        '#8A2BE2', // Blue Violet
+        '#FF6347', // Tomato
+        '#00CED1', // Dark Turquoise
+        '#FF69B4', // Hot Pink
+        '#4169E1'  // Royal Blue
+    ];
+    let colorIndex = 0;
+    
+    container.innerHTML = '';
+    
+    Object.keys(classCounts).sort((a, b) => parseInt(a) - parseInt(b)).forEach(cls => {
+        const div = document.createElement('div');
+        div.className = 'class-checkbox-item';
+        
+        const colorIndicator = document.createElement('div');
+        colorIndicator.className = 'class-color-indicator';
+        colorIndicator.style.backgroundColor = colors[colorIndex % colors.length];
+        classColors[cls] = colors[colorIndex % colors.length];
+        colorIndex++;
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `class_${cls}`;
+        checkbox.value = cls;
+        checkbox.className = 'form-check-input me-2';
+        checkbox.addEventListener('change', onClassSelectionChanged);
+        
+        // Restore checked state if it was previously checked
+        if (currentChecked.includes(cls)) {
+            checkbox.checked = true;
+        }
+        
+        const label = document.createElement('label');
+        label.htmlFor = `class_${cls}`;
+        label.className = 'form-check-label flex-grow-1';
+        label.textContent = `${cls} (${classCounts[cls]})`;
+        
+        div.appendChild(colorIndicator);
+        div.appendChild(checkbox);
+        div.appendChild(label);
+        container.appendChild(div);
+    });
+}
+
+function showMessage(message, type) {
+    const statusDiv = document.getElementById('reviewStatus');
+    statusDiv.innerHTML = `<div class="alert alert-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'info'} alert-dismissible fade show" role="alert">
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>`;
+    
+    setTimeout(() => {
+        statusDiv.innerHTML = '';
+    }, 5000);
+}
+</script>
+{% endblock %} 
