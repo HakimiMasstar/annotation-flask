@@ -354,36 +354,51 @@ function drawAnnotationBoxes() {
     const img = document.getElementById('currentImage');
     const container = document.getElementById('annotationBoxes');
     
-    img.onload = function() {
+    // Helper to update overlay after image loads
+    function updateOverlay() {
         container.innerHTML = '';
-        
+        // Get image position and size
+        const imgRect = img.getBoundingClientRect();
+        const parentRect = img.parentElement.getBoundingClientRect();
+        // Set overlay to match image size and position
+        container.style.position = 'absolute';
+        container.style.left = (img.offsetLeft) + 'px';
+        container.style.top = (img.offsetTop) + 'px';
+        container.style.width = img.width + 'px';
+        container.style.height = img.height + 'px';
+        container.style.pointerEvents = 'none'; // Let mouse events pass through
+        // Draw each annotation box in pixel coordinates
         currentAnnotations.forEach(anno => {
             const box = document.createElement('div');
             box.className = 'annotation-box';
             box.dataset.annotationId = anno.id;
-            
-            const x = anno.x * 100;
-            const y = anno.y * 100;
-            const w = anno.width * 100;
-            const h = anno.height * 100;
-            
-            box.style.left = `${x - w/2}%`;
-            box.style.top = `${y - h/2}%`;
-            box.style.width = `${w}%`;
-            box.style.height = `${h}%`;
+            // Convert normalized YOLO to pixel coordinates
+            const x = anno.x * img.width;
+            const y = anno.y * img.height;
+            const w = anno.width * img.width;
+            const h = anno.height * img.height;
+            box.style.left = `${x - w/2}px`;
+            box.style.top = `${y - h/2}px`;
+            box.style.width = `${w}px`;
+            box.style.height = `${h}px`;
             box.style.borderColor = classColors[anno.class] || '#FF6B6B';
-            
+            box.style.pointerEvents = 'auto'; // Allow selection
             // Add class number label
             const classLabel = document.createElement('div');
             classLabel.className = 'class-number-label';
             classLabel.textContent = anno.class;
             classLabel.style.color = classColors[anno.class] || '#FF6B6B';
-            
             box.appendChild(classLabel);
             box.onclick = () => selectAnnotation(anno.id);
             container.appendChild(box);
         });
-    };
+    }
+    // If image is already loaded, update overlay immediately
+    if (img.complete && img.naturalWidth !== 0) {
+        updateOverlay();
+    } else {
+        img.onload = updateOverlay;
+    }
 }
 
 function selectAnnotation(annotationId) {
