@@ -183,12 +183,34 @@
                 </div>
 
                 <div class="mb-3">
-                    <div class="btn-group w-100">
-                        <button type="button" class="btn btn-secondary" id="prevBtn">Previous</button>
-                        <button type="button" class="btn btn-secondary" id="nextBtn">Next</button>
-                    </div>
-                    <div class="text-center mt-2">
+                    <div class="text-center mb-2">
                         <small class="text-muted" id="imageCounter">No images loaded</small>
+                    </div>
+                    
+                    <!-- Step navigation buttons -->
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <div class="btn-group w-100">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="prev1000Btn" title="Previous 1000">-1000</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="prev100Btn" title="Previous 100">-100</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="prev10Btn" title="Previous 10">-10</button>
+                                <button type="button" class="btn btn-secondary btn-sm" id="prevBtn" title="Previous 1">-1</button>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="btn-group w-100">
+                                <button type="button" class="btn btn-secondary btn-sm" id="nextBtn" title="Next 1">+1</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="next10Btn" title="Next 10">+10</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="next100Btn" title="Next 100">+100</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="next1000Btn" title="Next 1000">+1000</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Go to page input -->
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="goToPageInput" placeholder="Go to page" min="1">
+                        <button type="button" class="btn btn-outline-primary" id="goToPageBtn">Go</button>
                     </div>
                 </div>
 
@@ -253,8 +275,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function setupEventListeners() {
     document.getElementById('folder_name').addEventListener('change', onFolderSelected);
-    document.getElementById('prevBtn').addEventListener('click', previousImage);
-    document.getElementById('nextBtn').addEventListener('click', nextImage);
+    
+    // Navigation buttons
+    document.getElementById('prevBtn').addEventListener('click', () => navigatePages(-1));
+    document.getElementById('nextBtn').addEventListener('click', () => navigatePages(1));
+    document.getElementById('prev10Btn').addEventListener('click', () => navigatePages(-10));
+    document.getElementById('next10Btn').addEventListener('click', () => navigatePages(10));
+    document.getElementById('prev100Btn').addEventListener('click', () => navigatePages(-100));
+    document.getElementById('next100Btn').addEventListener('click', () => navigatePages(100));
+    document.getElementById('prev1000Btn').addEventListener('click', () => navigatePages(-1000));
+    document.getElementById('next1000Btn').addEventListener('click', () => navigatePages(1000));
+    document.getElementById('goToPageBtn').addEventListener('click', goToPage);
+    
+    // Allow Enter key for go-to-page input
+    document.getElementById('goToPageInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            goToPage();
+        }
+    });
+    
     document.getElementById('addAnnotationBtn').addEventListener('click', toggleDrawingMode);
     document.getElementById('deleteFrameBtn').addEventListener('click', deleteFrame);
     document.getElementById('changeClassBtn').addEventListener('click', updateAnnotationClass);
@@ -367,8 +406,7 @@ function displayCurrentImage() {
     container.style.display = 'block';
     
     // Update navigation buttons
-    document.getElementById('prevBtn').disabled = currentImageIndex === 0;
-    document.getElementById('nextBtn').disabled = currentImageIndex === currentImages.length - 1;
+    updateNavigationButtons();
     
     // Display annotations
     currentAnnotations = imageData.annotations;
@@ -684,18 +722,66 @@ function updateAnnotationBox(annotationId, boxData) {
     });
 }
 
-function previousImage() {
-    if (currentImageIndex > 0) {
-        currentImageIndex--;
+function navigatePages(step) {
+    const newIndex = currentImageIndex + step;
+    const maxIndex = currentImages.length - 1;
+    
+    if (newIndex >= 0 && newIndex <= maxIndex) {
+        currentImageIndex = newIndex;
+        displayCurrentImage();
+    } else if (newIndex < 0) {
+        // Go to first image if trying to go before beginning
+        currentImageIndex = 0;
+        displayCurrentImage();
+    } else if (newIndex > maxIndex) {
+        // Go to last image if trying to go past end
+        currentImageIndex = maxIndex;
         displayCurrentImage();
     }
 }
 
-function nextImage() {
-    if (currentImageIndex < currentImages.length - 1) {
-        currentImageIndex++;
-        displayCurrentImage();
+function goToPage() {
+    const pageInput = document.getElementById('goToPageInput');
+    const pageNumber = parseInt(pageInput.value);
+    
+    if (isNaN(pageNumber) || pageNumber < 1) {
+        showMessage('Please enter a valid page number', 'error');
+        return;
     }
+    
+    const targetIndex = pageNumber - 1; // Convert to 0-based index
+    const maxIndex = currentImages.length - 1;
+    
+    if (targetIndex > maxIndex) {
+        showMessage(`Page ${pageNumber} doesn't exist. Maximum page is ${currentImages.length}`, 'error');
+        return;
+    }
+    
+    currentImageIndex = targetIndex;
+    displayCurrentImage();
+    pageInput.value = ''; // Clear the input
+}
+
+function updateNavigationButtons() {
+    const totalImages = currentImages.length;
+    const currentPage = currentImageIndex + 1;
+    
+    // Update go-to-page input max attribute
+    const goToPageInput = document.getElementById('goToPageInput');
+    goToPageInput.max = totalImages;
+    
+    // Update button states
+    document.getElementById('prevBtn').disabled = currentImageIndex === 0;
+    document.getElementById('nextBtn').disabled = currentImageIndex === totalImages - 1;
+    
+    document.getElementById('prev10Btn').disabled = currentImageIndex < 10;
+    document.getElementById('next10Btn').disabled = currentImageIndex > totalImages - 11;
+    
+    document.getElementById('prev100Btn').disabled = currentImageIndex < 100;
+    document.getElementById('next100Btn').disabled = currentImageIndex > totalImages - 101;
+    
+    document.getElementById('prev1000Btn').disabled = currentImageIndex < 1000;
+    document.getElementById('next1000Btn').disabled = currentImageIndex > totalImages - 1001;
 }
 
 function toggleDrawingMode() {
