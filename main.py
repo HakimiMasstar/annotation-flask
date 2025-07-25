@@ -202,6 +202,11 @@ def review():
             box_data = request.form.get('box_data')
             class_name = request.form.get('class_name')
             return jsonify(reviewer.add_annotation(folder_name, image_name, box_data, class_name))
+        elif action == 'update_annotation_box':
+            image_name = request.form.get('image_name')
+            annotation_id = request.form.get('annotation_id')
+            box_data = request.form.get('box_data')
+            return jsonify(reviewer.update_annotation_box(folder_name, image_name, annotation_id, box_data))
         elif action == 'delete_frame':
             image_name = request.form.get('image_name')
             return jsonify(reviewer.delete_frame(folder_name, image_name))

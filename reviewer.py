@@ -101,6 +101,48 @@ class AnnotationReviewer:
         except Exception as e:
             return {'error': f'Error updating annotation: {str(e)}'}
 
+    def update_annotation_box(self, folder_name, image_name, annotation_id, box_data):
+        """Update annotation box coordinates"""
+        folder_path = os.path.join(self.annotated_dir, folder_name)
+        label_file = os.path.join(folder_path, 'labels', os.path.splitext(image_name)[0] + '.txt')
+        
+        if not os.path.exists(label_file):
+            return {'error': 'Label file not found'}
+            
+        try:
+            # Parse box data (should be in YOLO format: x_center, y_center, width, height)
+            box_parts = box_data.split(',')
+            if len(box_parts) != 4:
+                return {'error': 'Invalid box data format'}
+            
+            x_center, y_center, width, height = map(float, box_parts)
+            
+            # Validate coordinates
+            if not (0 <= x_center <= 1 and 0 <= y_center <= 1 and 0 <= width <= 1 and 0 <= height <= 1):
+                return {'error': 'Box coordinates must be normalized (0-1)'}
+            
+            annotation_id = int(annotation_id)
+            new_lines = []
+            with open(label_file) as f:
+                for idx, line in enumerate(f):
+                    if idx == annotation_id:
+                        parts = line.strip().split()
+                        if len(parts) >= 5:
+                            # Keep the class but update the box coordinates
+                            class_name = parts[0]
+                            new_lines.append(f'{class_name} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}')
+                        else:
+                            new_lines.append(line.strip())
+                    else:
+                        new_lines.append(line.strip())
+            
+            with open(label_file, 'w') as f:
+                f.write('\n'.join(new_lines))
+            
+            return {'success': True, 'message': 'Annotation box updated successfully'}
+        except Exception as e:
+            return {'error': f'Error updating annotation box: {str(e)}'}
+
     def delete_annotation(self, folder_name, image_name, annotation_id):
         """Delete an annotation"""
         folder_path = os.path.join(self.annotated_dir, folder_name)

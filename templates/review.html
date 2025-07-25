@@ -35,6 +35,48 @@
         box-shadow: 0 0 8px rgba(0, 123, 255, 0.6);
         z-index: 1000;
     }
+    .resize-handle {
+        position: absolute;
+        background: #FFD700;
+        border: 2px solid #333;
+        z-index: 1001;
+        cursor: pointer;
+    }
+    .resize-handle.corner {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+    .resize-handle.edge {
+        background: rgba(255, 215, 0, 0.8);
+        border: 1px solid #333;
+    }
+    .resize-handle.top, .resize-handle.bottom {
+        height: 4px;
+        cursor: ns-resize;
+        left: 20%;
+        right: 20%;
+    }
+    .resize-handle.left, .resize-handle.right {
+        width: 4px;
+        cursor: ew-resize;
+        top: 20%;
+        bottom: 20%;
+    }
+    .resize-handle.top-left, .resize-handle.bottom-right {
+        cursor: nw-resize;
+    }
+    .resize-handle.top-right, .resize-handle.bottom-left {
+        cursor: ne-resize;
+    }
+    .resize-handle.top-left { top: -4px; left: -4px; }
+    .resize-handle.top-right { top: -4px; right: -4px; }
+    .resize-handle.bottom-left { bottom: -4px; left: -4px; }
+    .resize-handle.bottom-right { bottom: -4px; right: -4px; }
+    .resize-handle.top { top: -2px; }
+    .resize-handle.bottom { bottom: -2px; }
+    .resize-handle.left { left: -2px; }
+    .resize-handle.right { right: -2px; }
     .class-label {
         position: absolute;
         top: -20px;
@@ -199,6 +241,10 @@ let drawStart = null;
 let drawEnd = null;
 let selectedClasses = [];
 let classColors = {};
+let isResizing = false;
+let resizeHandle = null;
+let resizeAnnotationId = null;
+let originalBox = null;
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
@@ -390,6 +436,12 @@ function drawAnnotationBoxes() {
             classLabel.style.color = classColors[anno.class] || '#FF6B6B';
             box.appendChild(classLabel);
             box.onclick = () => selectAnnotation(anno.id);
+            
+            // Add resize handles if this box is selected
+            if (selectedAnnotationId === anno.id) {
+                addResizeHandles(box, anno.id);
+            }
+            
             container.appendChild(box);
         });
     }
@@ -424,6 +476,212 @@ function selectAnnotation(annotationId) {
     if (selectedItem) {
         selectedItem.classList.add('selected');
     }
+    
+    // Redraw annotations to add resize handles to selected box
+    drawAnnotationBoxes();
+}
+
+function addResizeHandles(box, annotationId) {
+    // Corner handles
+    const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+    corners.forEach(corner => {
+        const handle = document.createElement('div');
+        handle.className = `resize-handle corner ${corner}`;
+        handle.dataset.resizeType = corner;
+        handle.dataset.annotationId = annotationId;
+        handle.addEventListener('mousedown', startResize);
+        box.appendChild(handle);
+    });
+    
+    // Edge handles
+    const edges = ['top', 'bottom', 'left', 'right'];
+    edges.forEach(edge => {
+        const handle = document.createElement('div');
+        handle.className = `resize-handle edge ${edge}`;
+        handle.dataset.resizeType = edge;
+        handle.dataset.annotationId = annotationId;
+        handle.addEventListener('mousedown', startResize);
+        box.appendChild(handle);
+    });
+}
+
+function startResize(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    isResizing = true;
+    resizeHandle = e.target.dataset.resizeType;
+    resizeAnnotationId = e.target.dataset.annotationId;
+    
+    // Find the original annotation data
+    const annotation = currentAnnotations.find(anno => anno.id == resizeAnnotationId);
+    if (!annotation) return;
+    
+    // Store original box coordinates for reference
+    const img = document.getElementById('currentImage');
+    originalBox = {
+        x: annotation.x * img.width,
+        y: annotation.y * img.height,
+        width: annotation.width * img.width,
+        height: annotation.height * img.height,
+        left: (annotation.x * img.width) - (annotation.width * img.width / 2),
+        top: (annotation.y * img.height) - (annotation.height * img.height / 2),
+        right: (annotation.x * img.width) + (annotation.width * img.width / 2),
+        bottom: (annotation.y * img.height) + (annotation.height * img.height / 2)
+    };
+    
+    // Add global mouse listeners
+    document.addEventListener('mousemove', handleResize);
+    document.addEventListener('mouseup', endResize);
+    
+    // Prevent text selection during resize
+    document.body.style.userSelect = 'none';
+}
+
+function handleResize(e) {
+    if (!isResizing || !originalBox) return;
+    
+    const imageContainer = document.getElementById('imageContainer');
+    const rect = imageContainer.getBoundingClientRect();
+    const img = document.getElementById('currentImage');
+    const imgRect = img.getBoundingClientRect();
+    
+    // Calculate mouse position relative to image
+    const mouseX = e.clientX - imgRect.left;
+    const mouseY = e.clientY - imgRect.top;
+    
+    // Calculate new box boundaries
+    let newLeft = originalBox.left;
+    let newTop = originalBox.top;
+    let newRight = originalBox.right;
+    let newBottom = originalBox.bottom;
+    
+    // Update boundaries based on resize handle
+    switch(resizeHandle) {
+        case 'top-left':
+            newLeft = mouseX;
+            newTop = mouseY;
+            break;
+        case 'top-right':
+            newRight = mouseX;
+            newTop = mouseY;
+            break;
+        case 'bottom-left':
+            newLeft = mouseX;
+            newBottom = mouseY;
+            break;
+        case 'bottom-right':
+            newRight = mouseX;
+            newBottom = mouseY;
+            break;
+        case 'top':
+            newTop = mouseY;
+            break;
+        case 'bottom':
+            newBottom = mouseY;
+            break;
+        case 'left':
+            newLeft = mouseX;
+            break;
+        case 'right':
+            newRight = mouseX;
+            break;
+    }
+    
+    // Ensure minimum size and boundaries
+    const minSize = 20;
+    if (newRight - newLeft < minSize) {
+        if (resizeHandle.includes('left')) newLeft = newRight - minSize;
+        else newRight = newLeft + minSize;
+    }
+    if (newBottom - newTop < minSize) {
+        if (resizeHandle.includes('top')) newTop = newBottom - minSize;
+        else newBottom = newTop + minSize;
+    }
+    
+    // Keep within image boundaries
+    newLeft = Math.max(0, Math.min(newLeft, img.width));
+    newTop = Math.max(0, Math.min(newTop, img.height));
+    newRight = Math.max(0, Math.min(newRight, img.width));
+    newBottom = Math.max(0, Math.min(newBottom, img.height));
+    
+    // Update the visual box
+    const box = document.querySelector(`[data-annotation-id="${resizeAnnotationId}"]`);
+    if (box) {
+        box.style.left = `${newLeft}px`;
+        box.style.top = `${newTop}px`;
+        box.style.width = `${newRight - newLeft}px`;
+        box.style.height = `${newBottom - newTop}px`;
+    }
+}
+
+function endResize(e) {
+    if (!isResizing) return;
+    
+    isResizing = false;
+    document.removeEventListener('mousemove', handleResize);
+    document.removeEventListener('mouseup', endResize);
+    document.body.style.userSelect = '';
+    
+    // Get final box position
+    const box = document.querySelector(`[data-annotation-id="${resizeAnnotationId}"]`);
+    if (!box) return;
+    
+    const img = document.getElementById('currentImage');
+    const left = parseFloat(box.style.left);
+    const top = parseFloat(box.style.top);
+    const width = parseFloat(box.style.width);
+    const height = parseFloat(box.style.height);
+    
+    // Convert to normalized YOLO format
+    const centerX = (left + width / 2) / img.width;
+    const centerY = (top + height / 2) / img.height;
+    const normalizedWidth = width / img.width;
+    const normalizedHeight = height / img.height;
+    
+    // Update annotation data on server
+    const annotation = currentAnnotations.find(anno => anno.id == resizeAnnotationId);
+    if (annotation) {
+        const boxData = `${centerX},${centerY},${normalizedWidth},${normalizedHeight}`;
+        updateAnnotationBox(resizeAnnotationId, boxData);
+    }
+    
+    // Reset resize state
+    resizeHandle = null;
+    resizeAnnotationId = null;
+    originalBox = null;
+}
+
+function updateAnnotationBox(annotationId, boxData) {
+    const imageData = currentImages[currentImageIndex];
+    const formData = new FormData();
+    formData.append('action', 'update_annotation_box');
+    formData.append('folder_name', document.getElementById('folder_name').value);
+    formData.append('image_name', imageData.image_name);
+    formData.append('annotation_id', annotationId);
+    formData.append('box_data', boxData);
+    
+    fetch('/review', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Refresh current image to get updated annotation data
+            refreshCurrentImage();
+        } else {
+            showMessage(data.error || 'Error updating annotation box', 'error');
+            // Refresh to revert visual changes
+            refreshCurrentImage();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('Error updating annotation box', 'error');
+        // Refresh to revert visual changes
+        refreshCurrentImage();
+    });
 }
 
 function previousImage() {
